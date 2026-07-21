@@ -12,25 +12,28 @@
 7. 什么时候使用 map + Mutex，什么时候考虑 sync.Map。
 
 ## 一、基础问题
-1. map[string]int 变量本身是否保存了全部键值数据？
-   回答：是的
-2. 执行 b := a 后，修改 b 中的元素是否会影响 a？
-   回答: 不会
-3. 读取不存在的 Key 会发生 panic 吗？返回什么？
+### 1. map[string]int 变量本身是否保存了全部键值数据？
+   回答：Map变量本身不直接保存全部键值数据
+### 2. 执行 b := a 后，修改 b 中的元素是否会影响 a？
+回答:
+1. Map变量本身不直接保存全部键值数据。
+2. b := a 后，修改b中的元素通常会影响a。
+3. 这仍然是值传递，只是复制后的Map值引用同一底层结构。
+### 3. 读取不存在的 Key 会发生 panic 吗？返回什么？
    回答：不会，会得到0值，ok=false
-4. 怎样区分“Key 不存在”和“Key 存在但值恰好为零值”？
+### 4. 怎样区分“Key 不存在”和“Key 存在但值恰好为零值”？
    读取的时候， val, ok := map["key"]; ok=false时，key不存在，ok=true,就可以看val的值了
-5. nil Map 可以读取吗？可以写入吗？
+### 5. nil Map 可以读取吗？可以写入吗？
 回答: nil Map 可以读取，不可以写入
-6. Map 是否可以一边遍历一边删除元素？
+### 6. Map 是否可以一边遍历一边删除元素？
 回答： 可以
-7. Map 是否可以被多个 Goroutine 同时读取？
+### 7. Map 是否可以被多个 Goroutine 同时读取？
+回答：可以
+### 8. Map 是否可以被多个 Goroutine 同时读写？
 回答：不可以
-8. Map 是否可以被多个 Goroutine 同时读写？
-回答：不可以
-9. struct 值赋值和指针赋值有什么区别？
+### 9. struct 值赋值和指针赋值有什么区别？
 回答：值赋值会创建一个新的对象，指针赋值会改变原来的对象
-10. 为什么下面代码无法编译？
+### 10. 为什么下面代码无法编译？
 ```go
 users := map[int]User{
 1: {Name: "Tom"},
@@ -44,9 +47,9 @@ users[1].Name = "Jerry"
 1. copied := original 是否复制了全部键值数据？
 回答：是
 2. 为什么修改 copied 会影响 original？
-回答：因为map是引用传递，所以修改copied会修改original
+回答：因为复制后的map值引用同一底层结构
 3. 这是否意味着 Go 的 Map 是“引用传递”？
-回答： 是
+回答： 不是，map是值传递，指针参数能够修改原对象，不是因为变成了“引用传递”，而是因为复制出来的两个指针值指向同一个对象。
 
 ### 实验二：零值与存在性
 解释为什么只读取 Value 时，无法区分 Tom 和 Jerry。
@@ -64,7 +67,7 @@ users[1].Name = "Jerry"
 1. modifyUserValue 为什么没有改变原对象；
 回答：因为struct是值传递，所以修改user的值不会改变original
 2. modifyUserPointer 为什么改变了原对象；
-回答：因为struct是引用传递，所以修改user指针的值会改变original
+回答：函数接收到的是指针值的副本，但该副本仍然指向调用方的同一个 User，所以通过解引用修改字段会影响原对象。
 3. 这与 Slice 参数传递有什么相同和不同。
 回答：slice传递的时切片的描述符，修改的时候是因为共享了底层数组，所以修改的时候会改变原切片，但是扩容后就不会改变原切片；struct是值传递，所以修改struct的值不会改变原对象，但是 &struct{} 是指针传递，所以修改struct指针的值会改变原对象
 
@@ -97,8 +100,8 @@ users[1].Name = "Jerry"
 ### 实验六：Map 并发写
 
 ## 三、测试结果
-go test .\stage0\d02_map: ok      github.com/DurianToGit/UPUP/stage0/d02_map      2.596s
-go test -race .\stage0\d02_map: ok      github.com/DurianToGit/UPUP/stage0/d02_map      3.880s
+go test .\stage0\d02_map_struct: ok      github.com/DurianToGit/UPUP/stage0/d02_map      2.596s
+go test -race .\stage0\d02_map_struct: ok      github.com/DurianToGit/UPUP/stage0/d02_map      3.880s
 ## 四、核心结论
 ### 1. Map赋值时复制的是什么？
 回答：复制的是指针（*hmap）
@@ -147,15 +150,22 @@ func (s *SafeMap) Set(key string, val int) {
   - 解决方式：先取出到临时变量，修改后再放回去。
 ### 9. map[int]User和map[int]*User如何选择？
 回答：
-User 体积小（< 64字节） 且不需要修改选择	map[int]User,因为缓存友好，减少 GC 扫描压力（指针少）。
-User 体积大 或 需要修改结构体字段并影响所有引用选择 map[int]*User，因为避免大结构体频繁复制（赋值/遍历时只复制指针），且可直接修改 m[id].Name（寻址）。
-注意	*User 模式会增加 GC 负担（需要扫描指针），但通常性能优于频繁拷贝大对象。
+#### map[int]User：
+- 值较小；
+- 修改不频繁；
+- 希望值语义和隔离性；
+- 不希望外部持有可变引用。
+#### map[int]*User：
+- 对象需要被多个地方共享；
+- 需要直接修改同一对象；
+- 对象复制成本经实际 Benchmark 证明较高；
+- 能处理 nil 和并发同步问题。
 ### 10. sync.Map更适合哪些场景？
 回答：
 #### 适合场景：
 1. 读多写少（Write-once, read-many）：例如全局配置缓存，启动后极少变更，但每秒千万次读取。
 2. 键值对相对稳定（Key 只追加，不频繁修改）。
-3. 多个 Goroutine 只读，不写。
+3. 多个 Goroutine 分别频繁操作互不重叠的 Key 集合
 #### 不适合场景：
 1. 大量并发写入（写频繁）：因为写操作涉及 dirty map 提升（promotion），需要加锁且可能导致性能劣化，此时 RWMutex + 普通 map 性能更好。
 2. 频繁增加新 Key：频繁扩容会导致 read/dirty 同步开销变大。
@@ -169,3 +179,19 @@ Commit：
 AI参与部分：50%
 最不理解的地方：无
 实际学习时间：2小时左右
+
+## 补充
+### 1. 为什么Map赋值后修改一个变量会影响另一个变量，但仍然叫值传递？
+回答：因为go所有的传参都是值传递，Map的赋值操作是浅拷贝，只是复制指针，而不是复制对象。map在go底层是结构体指针，所以赋值操作只是复制指针，而不是复制庞大的哈希表。
+### 2. 为什么多个Goroutine只读普通Map可以，而只要出现一个写操作就需要同步？
+回答：
+- 只读场景：所有 Goroutine 都只是在内存中寻址、读取数据。数据没有发生位移，操作是原子的、确定性的，所以安全
+- 写场景：当 Map 写入过多数据时，会触发 runtime.mapassign 中的扩容逻辑（growWork）。扩容时会新建一个更大的桶数组（buckets），并将旧桶里的数据“搬迁移”到新桶。
+
+  - 在搬迁过程中，底层数组的地址可能随时改变。
+
+  - 如果此时另一个 Goroutine 正在读取，它可能会读到旧桶，或者读到迁移一半的数据，甚至因为访问已释放的内存而触发 fatal error: concurrent map read and map write。
+### 3. 传递*User时，函数实际复制的是什么？
+回答：复制的是内存地址（即指针值），大小固定为 uintptr（64位系统下为 8 字节）
+### 4. 为什么Go中返回局部变量的地址不会形成悬挂指针？
+回答：因为 Go 编译器会做“逃逸分析（Escape Analysis）”，自动将可能逃逸的变量分配到堆（Heap）上，而不是栈（Stack）上。这个堆内存由 Go 的垃圾回收器（GC） 管理
