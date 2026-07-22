@@ -45,7 +45,7 @@ users[1].Name = "Jerry"
 ## 二、实验结果
 ### 实验一：Map 的共享行为
 1. copied := original 是否复制了全部键值数据？
-回答：是
+回答：copied := original 复制的是 Map 值，不会深拷贝全部键值数据；复制后的两个 Map 值引用同一份底层 Map 数据。
 2. 为什么修改 copied 会影响 original？
 回答：因为复制后的map值引用同一底层结构
 3. 这是否意味着 Go 的 Map 是“引用传递”？
@@ -100,11 +100,14 @@ users[1].Name = "Jerry"
 ### 实验六：Map 并发写
 
 ## 三、测试结果
-go test .\stage0\d02_map_struct: ok      github.com/DurianToGit/UPUP/stage0/d02_map      2.596s
-go test -race .\stage0\d02_map_struct: ok      github.com/DurianToGit/UPUP/stage0/d02_map      3.880s
+go test .\stage0\d02_map_struct: ok      github.com/DurianToGit/UPUP/stage0/d02_map_struct      2.596s
+go test -race .\stage0\d02_map_struct: ok      github.com/DurianToGit/UPUP/stage0/d02_map_struct      3.880s
 ## 四、核心结论
 ### 1. Map赋值时复制的是什么？
-回答：复制的是指针（*hmap）
+回答：Map赋值会复制Map值，两个Map值引用同一底层数据。
+
+当前运行时实现：
+在特定Go版本中，Map值的内部实现可能包含指向运行时Map结构的指针。
 ### 2. Map为什么看起来具有引用语义？
 回答：因为赋值复制的是指针，所以 m1 和 m2 指向同一份底层数据结构。当通过 m2 修改键值对时，m1 读取到的也是修改后的数据。这与切片（Slice）类似，但 Go 官方文档明确将 Map 归类为“引用类型”以方便理解，实际上它内部就是指针在起作用。
 ### 3. nil Map读取和写入分别怎样？
@@ -185,7 +188,7 @@ AI参与部分：50%
 回答：因为go所有的传参都是值传递，Map的赋值操作是浅拷贝，只是复制指针，而不是复制对象。map在go底层是结构体指针，所以赋值操作只是复制指针，而不是复制庞大的哈希表。
 ### 2. 为什么多个Goroutine只读普通Map可以，而只要出现一个写操作就需要同步？
 回答：
-- 只读场景：所有 Goroutine 都只是在内存中寻址、读取数据。数据没有发生位移，操作是原子的、确定性的，所以安全
+- 只读场景：Map 构建完成并安全发布后，如果所有 Goroutine 都只读，没有任何 Goroutine 修改 Map 或其关联状态，就不存在读写数据竞争，因此可以并发读取。
 - 写场景：当 Map 写入过多数据时，会触发 runtime.mapassign 中的扩容逻辑（growWork）。扩容时会新建一个更大的桶数组（buckets），并将旧桶里的数据“搬迁移”到新桶。
 
   - 在搬迁过程中，底层数组的地址可能随时改变。
@@ -195,3 +198,24 @@ AI参与部分：50%
 回答：复制的是内存地址（即指针值），大小固定为 uintptr（64位系统下为 8 字节）
 ### 4. 为什么Go中返回局部变量的地址不会形成悬挂指针？
 回答：因为 Go 编译器会做“逃逸分析（Escape Analysis）”，自动将可能逃逸的变量分配到堆（Heap）上，而不是栈（Stack）上。这个堆内存由 Go 的垃圾回收器（GC） 管理
+
+## 结论：
+1. Go参数传递全部是值传递。
+
+2. Map赋值复制Map值，不会深拷贝全部键值数据。
+
+3. 两个赋值后的Map变量通常引用同一份底层Map数据。
+
+4. nil Map可以读取、len、delete，但不能写入。
+
+5. comma ok用于区分Key不存在和Value恰好为零值。
+
+6. 普通Map可以多Goroutine只读，但不能无同步并发读写或并发写。
+
+7. RWMutex允许多个读者同时进入，写操作独占。
+
+8. 传递*User时复制的是指针值，副本仍指向同一个User。
+
+9. Go可以安全返回局部变量地址，编译器通过逃逸分析保障其生命周期。
+
+10. map[int]User和map[int]*User的选择取决于语义、共享、修改方式和实际性能测试。
