@@ -5,7 +5,7 @@
 回答：
 - 普通函数独立存在，方法绑定在特定的类型（接收者）上。
 - 方法调用时，会自动将接收者作为第一个参数传入，而函数直接通过函数名调用。
-- 函数无法被接口约束，不能用于接口实现；方法可以被接口约束，用于接口实现。
+- 接口实现取决于类型的方法集。普通函数值没有方法，但命名函数类型可以定义方法并实现接口
 
 ### 2. 值接收者方法中修改字段，是否会改变调用者？
 回答：不会。
@@ -82,6 +82,8 @@ func main() {
 | `func (t T) Method()`  | 是          | 是           |
 | `func (t *T) Method()` | 否          | 是           |
 
+- 什么Document变量可以直接调用Save， 但Document仍然没有实现Saver？
+回答：Document 的 Save 方法是指针接收者，所以只能通过指针调用。而变量document 是值类型，所以只能通过指针调用。不能通过值调用指针方法
 ### 实验三：Interface 的动态类型和值
 只有动态类型和动态值都为空时，Interface 才等于 nil。
 - 在 ExperimentInterfaceValue 函数内进行类型判断 `fmt.Println(userPointer2 == nil) 是 true`，因为不产生动态;因为 userPointer2 的静态类型是 *User，它是一个具体的指针变量。
@@ -100,11 +102,13 @@ func main() {
 #### 1. OrderService 为什么不需要知道具体通知方式？
 回答：这是依赖倒置原则（DIP，Dependency Inversion Principle）的体现。
 #### 2. 接口定义在调用方还是实现方附近更合理？
-回答：绝对应该定义在“调用方”（使用方）附近，而不是实现方附近。
+回答：优先在调用方（消费方）根据实际需要定义小接口，而不是由实现方提前定义一个庞大的通用接口
 #### 3. 接口是不是越大越好？
-回答：绝对不是，接口应该是越小越好（go倡导“小接口”）。
+回答：不是，接口应当小而内聚，只包含当前消费者真正需要的行为
 #### 4. 这种设计如何方便测试？
 回答：这种设计最大的红利之一就是单元测试极其轻量且稳定。
+#### 5.为什么一个函数经过命名类型和方法适配后，可以实现接口？
+回答：接口实现取决于类型的方法集。普通函数值没有方法，但命名函数类型可以定义方法并实现接口
 
 由于 OrderService 依赖的是接口，在测试时，我们不需要真的去连接邮件服务器或短信网关，只需在测试文件中定义一个“模拟（Mock）实现”。
 
@@ -112,6 +116,7 @@ func main() {
 ### 1. 方法与普通函数有什么区别？
 - 归属不同：函数是独立的代码块；方法必须绑定到特定的类型（receiver）。
 - 调用方式不同：函数通过 函数名(参数) 调用；方法通过 实例.方法名(参数) 调用。
+- 接口实现取决于类型的方法集。普通函数值没有方法，但命名函数类型可以定义方法并实现接口
 
 ### 2. 值接收者和指针接收者分别复制什么？
 - 值接收者：复制的是接收者变量的副本，方法内部修改不影响原对象
@@ -155,7 +160,7 @@ func main() {
 - 便于 Mock 和测试：小接口只需要实现 1~2 个方法，Mock 代码量极少，极大降低单元测试成本。
 
 ### 11. 接口应该由调用方还是实现方定义？
-必须由调用方（消费者）定义。
+优先在消费方根据实际需要定义小接口，而不是由实现方提前定义一个庞大的通用接口。
 这是 Go 与 Java 等语言最大的不同。实现方只负责提供具体结构体，而接口定义在使用该接口的函数/模块旁边。标准库典范：io.Reader 定义在调用它数据的包中，而非实现数据读取的包中。
 
 ### 12. 如何通过接口进行单元测试隔离？
@@ -188,7 +193,33 @@ func TestBusiness(t *testing.T) {
 ```
 > 这种模式下，测试不再依赖数据库或网络，执行速度极快（配合 go test -short 可跳过集成测试）。
 
-## 五、自评
+## 五、测试
+命令:go test -v ./stage0/d03_method_interface/...
+测试结果：
+```
+?       github.com/DurianToGit/UPUP/stage0/d03_method_interface [no test files]
+=== RUN   TestValueReceiver
+inside value method: {1 Value Jerry}
+--- PASS: TestValueReceiver (0.00s)
+=== RUN   TestPointerReceiver
+inside pointer method: &{1 Pointer Jerry}
+--- PASS: TestPointerReceiver (0.00s)
+=== RUN   TestDoSomethingReturnsTypedNil
+--- PASS: TestDoSomethingReturnsTypedNil (0.00s)
+=== RUN   TestDoSomethingFixedReturnsNil
+--- PASS: TestDoSomethingFixedReturnsNil (0.00s)
+=== RUN   TestCompleteOrder
+--- PASS: TestCompleteOrder (0.00s)
+PASS
+ok      github.com/DurianToGit/UPUP/stage0/d03_method_interface/experiments     2.259s
+```
+命令：go test -race ./stage0/d03_method_interface/...
+测试结果：
+```
+?       github.com/DurianToGit/UPUP/stage0/d03_method_interface [no test files]
+ok      github.com/DurianToGit/UPUP/stage0/d03_method_interface/experiments     2.992s
+```
+## 六、自评
 独立完成比例：≈10%
 AI参与部分：≈90%
 最不理解的地方：T和*T的方法集有什么区别？

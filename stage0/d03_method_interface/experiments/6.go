@@ -20,6 +20,13 @@ func (n SMSNotifier) Notify(message string) error {
 	return nil
 }
 
+// 增加函数适配器
+type NotifyFunc func(message string) error
+
+func (f NotifyFunc) Notify(message string) error {
+	return f(message)
+}
+
 type OrderService struct {
 	notifier Notifier
 }
@@ -41,6 +48,19 @@ func InjectNotifier() {
 	order := NewOrderService(notifier)
 	err := order.CompleteOrder(1)
 	if err != nil {
+		fmt.Println("error:", err)
+	}
+}
+
+func ExperimentNotifyFunc() {
+	notifier := NotifyFunc(func(message string) error {
+		fmt.Println("function notifier:", message)
+		return nil
+	})
+
+	service := NewOrderService(notifier)
+
+	if err := service.CompleteOrder(2001); err != nil {
 		fmt.Println("error:", err)
 	}
 }
